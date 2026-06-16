@@ -1,0 +1,37 @@
+<!--
+  local_rules.xml - custom Wazuh detection rules for the lab.
+  Place in: /var/ossec/etc/rules/local_rules.xml on the Wazuh Manager,
+  then restart: systemctl restart wazuh-manager
+
+  These are STARTERS - the point of the project is that YOU extend them to
+  catch the Atomic Red Team techniques your base ruleset misses. Re-run the
+  matching Atomic test and confirm your rule fires before committing.
+-->
+<group name="local,sysmon,attack,">
+
+  <!-- T1059.001 - Encoded PowerShell command (common in malware/C2) -->
+  <rule id="100210" level="12">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image">powershell\.exe</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)-enc|-encodedcommand|-e\s</field>
+    <description>Encoded PowerShell execution detected (possible T1059.001)</description>
+    <mitre><id>T1059.001</id></mitre>
+  </rule>
+
+  <!-- T1547.001 - Persistence via Registry Run key modification -->
+  <rule id="100211" level="10">
+    <if_group>sysmon_event_13</if_group>
+    <field name="win.eventdata.targetObject" type="pcre2">(?i)\\CurrentVersion\\Run</field>
+    <description>Registry Run key modified - possible persistence (T1547.001)</description>
+    <mitre><id>T1547.001</id></mitre>
+  </rule>
+
+  <!-- T1003 - Suspicious access to LSASS (credential dumping indicator) -->
+  <rule id="100212" level="13">
+    <if_group>sysmon_event_10</if_group>
+    <field name="win.eventdata.targetImage" type="pcre2">(?i)lsass\.exe</field>
+    <description>Process accessed LSASS memory - possible credential dumping (T1003)</description>
+    <mitre><id>T1003</id></mitre>
+  </rule>
+
+</group>
