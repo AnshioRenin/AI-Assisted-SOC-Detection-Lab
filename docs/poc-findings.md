@@ -1,10 +1,6 @@
 # POC Write-up: Can a Local LLM Safely Triage SOC Alerts?
 
 > This is the proof-of-concept record for the AI-triage component of the lab.
-> Fill in the blanks marked `[...]` and drop your screenshots into
-> `docs/screenshots/`. Keep it honest - the value of this POC is the limits
-> you found, not a claim that it works perfectly.
-
 ## 1. Hypothesis
 Can a small, locally-hosted language model (`llama3.2:3b` via Ollama) take a
 raw SOC alert and produce a reliable, analyst-ready triage - summary, MITRE
