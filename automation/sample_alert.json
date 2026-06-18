@@ -1,0 +1,39 @@
+{
+  "timestamp": "2026-06-18T00:42:11.482+0000",
+  "rule": {
+    "id": "100210",
+    "level": 12,
+    "description": "Encoded PowerShell command executed (possible T1059.001)",
+    "mitre": {
+      "id": ["T1059.001"],
+      "tactic": ["Execution"],
+      "technique": ["PowerShell"]
+    }
+  },
+  "agent": {
+    "id": "001",
+    "name": "WIN-ENDPOINT-01",
+    "ip": "192.168.56.20"
+  },
+  "manager": {
+    "name": "wazuh-server"
+  },
+  "data": {
+    "win": {
+      "system": {
+        "eventID": "1",
+        "channel": "Microsoft-Windows-Sysmon/Operational",
+        "computer": "WIN-ENDPOINT-01"
+      },
+      "eventdata": {
+        "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "parentImage": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+        "commandLine": "powershell.exe -nop -w hidden -enc SQBFAFgAKABOAGUAdwAtAE8AYgBqAGUAYwB0ACAATgBlAHQ...",
+        "user": "WIN-ENDPOINT-01\\analyst",
+        "hashes": "SHA256=8A0B2C..."
+      }
+    }
+  },
+  "full_log": "Process Create: powershell.exe spawned by WINWORD.EXE with an encoded (-enc) command and hidden window.",
+  "location": "Microsoft-Windows-Sysmon/Operational"
+}

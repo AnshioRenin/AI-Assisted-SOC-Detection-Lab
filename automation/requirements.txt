@@ -1,0 +1,6 @@
+# The triage scripts use only the Python standard library (urllib, json) so
+# they run with zero external dependencies. This file is kept for clarity and
+# in case you later switch to the official Ollama client.
+#
+# Optional - only needed if you refactor to use the official client:
+# ollama>=0.3.0
