@@ -29,9 +29,9 @@ python automation/ai_triage.py automation/sample_alert.json
 **Screenshot:** `docs/screenshots/triage_output.png`
 
 **What I observed:**
-- Technique ID returned by the model: `[e.g. T1059.001 - correct]`
-- Technique NAME returned by the raw model: `[e.g. "Exfiltration..." - WRONG]`
-- Severity: `[...]`
+- Technique ID returned by the model: `[id: T1059.001]`
+- Technique NAME returned by the raw model: `[name: Command and Scripting Interpreter: PowerShell]`
+- Severity: `[High]`
 - Were the next steps sensible? `[yes / partly / no - explain]`
 
 **Key finding (the interesting bit):**
