@@ -1,0 +1,72 @@
+<!--
+  local_rules.xml - Custom Wazuh detection rules for the SOC lab.
+
+  WHERE THIS GOES on the Wazuh manager:
+      /var/ossec/etc/rules/local_rules.xml
+  Then test and restart:
+      sudo /var/ossec/bin/wazuh-analysisd -t
+      sudo systemctl restart wazuh-manager
+
+  HOW WAZUH SEES THESE EVENTS:
+      The Wazuh agent forwards Windows Sysmon events via the
+      windows_eventchannel decoder. Sysmon fields become win.eventdata.*
+      and Wazuh groups process-creation events (Sysmon Event ID 1) as
+      sysmon_event1.
+
+  TESTING NOTES (honest, from building this):
+    - Custom rule IDs must be in the 100000-119999 range.
+    - Rule 100212 below is the one VALIDATED in this lab: it closed a real
+      gap (see README). Native Wazuh rules already detected T1059.001 and
+      T1547.001, so rules 100210/100211/100213 are included as additional
+      hardening but were not the gap-closers in this run.
+    - IMPORTANT: keep each <field ...> tag on a SINGLE line. A line break
+      inside the tag makes the manager reject the file ("Attribute has no
+      value"). Paste over SSH rather than typing to avoid this.
+-->
+
+<group name="local,sysmon,soc_lab,">
+
+  <!-- ===========================================================
+       T1003.001  OS Credential Dumping: LSASS Memory
+       VALIDATED - this rule fired (22 alerts) when native rules did not.
+       Detects credential-dumping TOOLS by their command line (e.g.
+       procdump -ma lsass.exe). This works even when Windows 11 LSASS
+       protection blocks the actual dump, because we detect the ATTEMPT.
+       Data source: Sysmon Event ID 1 (Process Create).
+       =========================================================== -->
+  <rule id="100212" level="13">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.commandLine">lsass</field>
+    <description>Possible LSASS credential dumping tool executed on $(win.system.computer)</description>
+    <mitre>
+      <id>T1003.001</id>
+    </mitre>
+  </rule>
+
+  <!-- ===========================================================
+       Additional hardening rules (native Wazuh rules already cover these
+       techniques; included for completeness / defence in depth).
+       =========================================================== -->
+
+  <!-- T1059.001  Encoded / hidden PowerShell -->
+  <rule id="100210" level="12">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image">powershell\.exe</field>
+    <field name="win.eventdata.commandLine">-enc|-encodedcommand|-w hidden|-nop</field>
+    <description>Encoded or hidden PowerShell command executed on $(win.system.computer)</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+  </rule>
+
+  <!-- T1059.001  Office application spawning PowerShell (maldoc chain) -->
+  <rule id="100213" level="14">
+    <if_sid>100210</if_sid>
+    <field name="win.eventdata.parentImage">WINWORD\.EXE|EXCEL\.EXE|POWERPNT\.EXE|OUTLOOK\.EXE</field>
+    <description>Office application spawned encoded PowerShell - likely malicious document</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+  </rule>
+
+</group>
