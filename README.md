@@ -6,7 +6,7 @@ A home Security Operations Center that detects, investigates, and responds to si
 > - ✅ **Phase 1 - AI triage POC:** complete (local LLM triage + hallucination and prompt-injection findings documented).
 > - ✅ **Phase 2 - SIEM lab:** complete (Wazuh + Sysmon + monitored Windows endpoint).
 > - ✅ **Phase 3 - Attacks + custom detections:** complete (ran MITRE ATT&CK techniques, found a gap, wrote a rule that caught it).
-> - ⏳ **Phase 4 - AI on real alerts + SQL hunting:** in progress.
+> - ✅ **Phase 4 - AI on real alerts + SQL hunting:** complete (AI triage validated on a real SOC alert; SQL threat hunting surfaced credential-dumping activity from the logs).
 >
 > Build write-up: [my portfolio](https://anshio-renin.vercel.app/).
 
@@ -26,7 +26,7 @@ It mirrors real threat-detection operations work: developing detection **signals
 techniques mapped to MITRE ATT&CK                         summary, ATT&CK map,
                                                           severity, next steps
                                                                 |
-                                                       [ hunt_queries.sql ]
+                                                       [ run_hunt.py / SQL ]
                                                        SQL hunting over the logs
 ```
 
@@ -38,7 +38,7 @@ techniques mapped to MITRE ATT&CK                         summary, ATT&CK map,
 | SIEM / XDR | Wazuh (single-node OVA) | Collects logs, runs detection rules, shows alerts |
 | Attack simulation | Atomic Red Team | Runs real MITRE ATT&CK techniques on demand |
 | AI triage | Python + Ollama (`llama3.2:3b`) | Turns raw alerts into analyst-ready triage, offline |
-| Log analysis | SQLite + SQL | Proactive threat hunting over exported events |
+| Log analysis | SQLite + SQL (`run_hunt.py`) | Proactive threat hunting over exported events |
 
 ## Detection engineering results
 
@@ -50,9 +50,23 @@ I ran three MITRE ATT&CK techniques with Atomic Red Team, checked what Wazuh cau
 | T1547.001 | Registry Run key persistence | ✅ Caught | — | Detected |
 | T1003.001 | LSASS credential dumping | ❌ **Missed** | **rule 100212** | **Detected after custom rule (22 alerts)** |
 
+![Custom rule 100212 fired on LSASS credential dumping](docs/screenshots/02-detection-rule-100212-fired.png)
+
 **The gap-closer (rule 100212):** Wazuh did not alert on the LSASS credential-dumping attempts out of the box. Windows 11's LSASS protection blocked the actual memory dumps, and Sysmon was not logging ProcessAccess (Event ID 10) - so I pivoted to a more reliable signal: detecting the dumping **tools by their command line** (Event ID 1). This catches `procdump -ma lsass.exe` and similar even when the dump itself fails - which is exactly what you want, because detecting the *attempt* matters. After loading the rule and re-running the attack, it fired (Level 13, mapped to T1003.001).
 
 This is the core loop: **attack → SIEM missed it → analyse the telemetry → write a rule → re-test → caught.**
+
+![SOC dashboard overview - events and MITRE ATT&CK coverage](docs/screenshots/03-dashboard-overview.png)
+
+## Phase 4: AI triage and SQL hunting on real data
+
+**AI triage on a real alert.** Running `ai_triage.py` against a real alert exported from the SOC, the local model (`llama3.2:3b`) correctly identified the activity as LSASS credential dumping (T1003.001), rated it High, and listed sensible next steps. Honest finding: the model produced correct triage content but did not always return strictly parseable JSON, so the script falls back to printing the raw output - a reminder that small local models accelerate an analyst but still need a human in the loop.
+
+![AI triage on a real alert](docs/screenshots/01-ai-triage-real-alert.png)
+
+**SQL threat hunting.** Loading 241 exported events into SQLite and querying the command-line field surfaced every credential-dumping attempt directly from the logs (procdump, rundll32, and PowerShell dump chains referencing lsass) - corroborating the custom detection rule from a second, data-driven angle. The hunt runs through `analysis/run_hunt.py`, which uses Python's built-in SQLite (no separate install needed) and auto-detects the relevant columns from the exported CSV.
+
+![SQL threat hunting surfaced the credential-dumping tools](docs/screenshots/05-sql-threat-hunt.png)
 
 ## Build challenges and how I solved them
 
@@ -63,7 +77,7 @@ Real lab, real problems. Documenting these because the troubleshooting *is* the 
 | Host hypervisor conflict | Both VMs went straight to "Aborted" (`VERR_UNRESOLVED_ERROR`) | Windows' Hyper-V was holding the CPU's virtualization. `bcdedit /set hypervisorlaunchtype off` + disabled Memory Integrity, then cold restart |
 | Host disk full | `DrvVD_DISKFULL`, install froze | Moved the VirtualBox VMs to a drive with space (changed Default Machine Folder + moved existing VMs) |
 | Wazuh API offline | Dashboard showed API "Offline"; manager failed with `timeout` | The indexer was consuming ~4.5GB; capped the indexer JVM heap (`-Xmx1g`) so the manager had room to start |
-| Agent connected but no events | Agent "Active" but no Sysmon data | Wazuh agent does not collect Sysmon by default - added the `Microsoft-Windows-Sysmon/Operational` event channel to `ossec.conf` and restarted the agent |
+| Agent connected but no events | Agent "Active" but no Sysmon data | Wazuh agent does not collect Sysmon by default - added the `Microsoft-Windows-Sysmon/Operational` eventchannel to `ossec.conf` and restarted the agent |
 | Rule rejected, manager wouldn't start | `XMLERR: Attribute ... has no value` | A line break had split a `<field>` tag across two lines; re-added the rule over SSH (paste preserves line structure) |
 | Attack tools blocked | "Access is denied" / "path not found" running ProcDump, Mimikatz | Windows Defender quarantined the hacktools; disabled Tamper Protection + real-time protection and added a folder exclusion for `C:\AtomicRedTeam` |
 | LSASS access not logged | Sysmon Event ID 1 flowed (176 events) but Event ID 10 had zero | Pivoted the detection from memory-access (Event 10) to command-line analysis (Event 1), which was both reliable and a valid real-world detection approach |
@@ -90,6 +104,24 @@ Full POC write-up: [`docs/poc-findings.md`](docs/poc-findings.md).
 
 **Honest result:** the naive prompt obeyed the injection (marked a real attack as Low). The hardened prompt *detected* the injection and flagged it as suspicious - but the small model then **followed it anyway**. Defence (data-wrapping + a defensive system prompt) is **necessary but not sufficient**; keep a **human in the loop**.
 
+![Prompt-injection test: naive vs hardened prompt](docs/screenshots/04-prompt-injection-test.png)
+
+## SQL threat hunting
+
+`analysis/run_hunt.py` loads an exported `events.csv` into SQLite and runs a set of hunts:
+
+```bash
+# place run_hunt.py next to your exported events.csv, then:
+python analysis/run_hunt.py
+```
+
+- **HUNT 1** - LSASS credential dumping (command line contains `lsass`)
+- **HUNT 2** - encoded / hidden PowerShell
+- **HUNT 3** - process frequency (rare processes surface first)
+- **HUNT 4** - script interpreters spawned by other processes (parent → child)
+
+No SQLite install required - it uses Python's built-in `sqlite3` and auto-detects the relevant columns from the CSV.
+
 ## Repo layout
 
 ```
@@ -102,10 +134,11 @@ detection-rules/
   local_rules.xml           custom Wazuh rules (100212 = validated LSASS detection)
 analysis/
   hunt_queries.sql          SQL threat-hunting queries
+  run_hunt.py               Python runner: loads events.csv into SQLite and runs the hunts
 docs/
   poc-findings.md           the AI-triage POC write-up
   AI_SOC_Lab_Concepts_Explained.pdf   plain-English concept guide
-  screenshots/              evidence (triage, injection, detections)
+  screenshots/              evidence (triage, detections, dashboard, injection, hunting)
 ```
 
 ## Disclaimer
